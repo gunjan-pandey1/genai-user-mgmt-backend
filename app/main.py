@@ -28,12 +28,7 @@ from pydantic import BaseModel
 class ChatRequest(BaseModel):
     question: str
 
-from .rag import ask_question, build_vector_store
-
-
-@app.on_event("startup")
-async def startup_event():
-    await build_vector_store()
+from .rag import ask_question
 
 @app.post("/chat", tags=["AI"])
 async def chat_endpoint(request: ChatRequest):

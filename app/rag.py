@@ -1,6 +1,7 @@
 from typing import List
 import os
 import logging
+import asyncio
 from groq import Groq
 import chromadb
 from chromadb.config import Settings
@@ -61,15 +62,11 @@ def get_chroma_client():
         logger.warning("ChromaDB unavailable, RAG functionality will be limited")
         return None
 
-# Collection name for users
 COLLECTION_NAME = "users"
 collection = None
+vector_building = False
 
 async def build_vector_store():
-    """
-    Fetch all users from DB and build/rebuild the vector store.
-    In production, this would be an incremental update to a persistent vector DB.
-    """
     global collection
     
     # Get ChromaDB client with error handling
@@ -89,16 +86,13 @@ async def build_vector_store():
             collection = None
             return
         
-        # Reset collection if it exists
         try:
             client.delete_collection(name=COLLECTION_NAME)
         except:
             pass
         
-        # Create new collection
         collection = client.create_collection(name=COLLECTION_NAME)
         
-        # Prepare data for ChromaDB
         documents = []
         metadatas = []
         ids = []
@@ -119,7 +113,6 @@ async def build_vector_store():
             metadatas.append(metadata)
             ids.append(str(u.get("_id")))
         
-        # Add documents to collection
         logger.info(f"Building vector store with {len(documents)} users...")
         collection.add(
             documents=documents,
@@ -131,35 +124,52 @@ async def build_vector_store():
     except Exception as e:
         logger.error(f"Error building vector store: {e}")
 
-async def retrieve_context(query: str) -> str:
-    """
-    Retrieve relevant users using semantic search.
-    """
-    global collection
-    
-    # Lazy initialization / Rebuild check (simple approach)
-    # Ideally, we should update this on database changes or have a background job.
-    if collection is None:
-        await build_vector_store()
-        
-    if collection is None:
-        return "No user data available."
-        
+async def _build_vector_store_background():
+    global vector_building
+    if vector_building:
+        return
+    vector_building = True
     try:
-        # Perform similarity search
-        # n_results=5 means we retrieve the top 5 most relevant users
-        results = collection.query(
-            query_texts=[query],
-            n_results=5
-        )
-        
-        if not results or not results.get("documents") or not results["documents"][0]:
-            return "No relevant users found."
-        
-        context_str = "Found relevant Users:\n\n"
-        for i, doc in enumerate(results["documents"][0], 1):
-            context_str += f"--- Result {i} ---\n{doc}\n\n"
-            
+        await build_vector_store()
+    finally:
+        vector_building = False
+
+
+async def retrieve_context(query: str) -> str:
+    global collection, vector_building
+
+    if collection is None and not vector_building:
+        asyncio.create_task(_build_vector_store_background())
+
+    try:
+        if collection is not None:
+            results = collection.query(
+                query_texts=[query],
+                n_results=5
+            )
+
+            if results and results.get("documents") and results["documents"][0]:
+                context_str = "Found relevant Users:\n\n"
+                for i, doc in enumerate(results["documents"][0], 1):
+                    context_str += f"--- Result {i} ---\n{doc}\n\n"
+                return context_str
+
+        db = await get_database()
+        cursor = db["users"].find()
+        users = await cursor.to_list(length=1000)
+
+        if not users:
+            return "No user data available."
+
+        context_str = "Users:\n\n"
+        for u in users:
+            context_str += (
+                f"User Name: {u.get('name')}\n"
+                f"Email: {u.get('email')}\n"
+                f"Role: {u.get('role')}\n"
+                f"Bio: {u.get('bio', 'N/A')}\n\n"
+            )
+
         return context_str
     except Exception as e:
         logger.error(f"Error searching vector store: {e}")
