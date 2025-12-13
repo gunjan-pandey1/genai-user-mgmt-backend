@@ -3,12 +3,7 @@ uvicorn
 motor
 pydantic[email]
 email-validator
-langchain
-
-langchain-community
-langchain-huggingface
+python-dotenv
 requests
-
 groq
-faiss-cpu
-sentence-transformers
+chromadb

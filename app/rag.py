@@ -2,9 +2,8 @@ from typing import List
 import os
 import logging
 from groq import Groq
-from langchain_huggingface import HuggingFaceEmbeddings
-from langchain_community.vectorstores import FAISS
-from langchain.docstore.document import Document
+import chromadb
+from chromadb.config import Settings
 from .database import get_database
 
 # Configure Logging
@@ -21,23 +20,64 @@ client = Groq(api_key=GROQ_API_KEY)
 # Model Name
 MODEL_NAME = "llama-3.1-8b-instant"
 
-# Initialize Embeddings (Global variable to load model once)
-# Using a small, fast model suitable for CPU
-embeddings = HuggingFaceEmbeddings(model_name="all-MiniLM-L6-v2")
-vector_store = None
+# Initialize ChromaDB client
+# ChromaDB uses default embeddings (all-MiniLM-L6-v2) built-in
+# Supports both remote (Railway) and local (in-memory) modes
+CHROMA_HOST = os.getenv("CHROMA_HOST")
+CHROMA_PORT = os.getenv("CHROMA_PORT", "8000")
+
+if CHROMA_HOST:
+    # Remote ChromaDB connection (Railway deployment)
+    logger.info(f"Connecting to remote ChromaDB at {CHROMA_HOST}:{CHROMA_PORT}")
+    chroma_client = chromadb.HttpClient(
+        host=CHROMA_HOST,
+        port=int(CHROMA_PORT),
+        settings=Settings(
+            anonymized_telemetry=False
+        )
+    )
+else:
+    # In-memory ChromaDB (local development)
+    logger.info("Using in-memory ChromaDB for local development")
+    chroma_client = chromadb.Client(Settings(
+        anonymized_telemetry=False,
+        allow_reset=True
+    ))
+
+# Collection name for users
+COLLECTION_NAME = "users"
+collection = None
 
 async def build_vector_store():
     """
     Fetch all users from DB and build/rebuild the vector store.
     In production, this would be an incremental update to a persistent vector DB.
     """
-    global vector_store
+    global collection
     try:
         db = await get_database()
         cursor = db["users"].find()
         users = await cursor.to_list(length=1000) # Fetch more users
         
+        if not users:
+            logger.warning("No users found to build vector store.")
+            collection = None
+            return
+        
+        # Reset collection if it exists
+        try:
+            chroma_client.delete_collection(name=COLLECTION_NAME)
+        except:
+            pass
+        
+        # Create new collection
+        collection = chroma_client.create_collection(name=COLLECTION_NAME)
+        
+        # Prepare data for ChromaDB
         documents = []
+        metadatas = []
+        ids = []
+        
         for u in users:
             # Create a rich text representation for embedding
             page_content = f"User Name: {u.get('name')}\nEmail: {u.get('email')}\nRole: {u.get('role')}\nBio: {u.get('bio', 'N/A')}"
@@ -45,18 +85,23 @@ async def build_vector_store():
             # Metadata allows us to filter or reference source data if needed
             metadata = {
                 "id": str(u.get("_id")),
-                "role": u.get("role")
+                "role": u.get("role", "user"),
+                "name": u.get("name", ""),
+                "email": u.get("email", "")
             }
             
-            documents.append(Document(page_content=page_content, metadata=metadata))
-            
-        if documents:
-            logger.info(f"Building vector store with {len(documents)} users...")
-            vector_store = FAISS.from_documents(documents, embeddings)
-            logger.info("Vector store built successfully.")
-        else:
-            logger.warning("No users found to build vector store.")
-            vector_store = None
+            documents.append(page_content)
+            metadatas.append(metadata)
+            ids.append(str(u.get("_id")))
+        
+        # Add documents to collection
+        logger.info(f"Building vector store with {len(documents)} users...")
+        collection.add(
+            documents=documents,
+            metadatas=metadatas,
+            ids=ids
+        )
+        logger.info("Vector store built successfully.")
             
     except Exception as e:
         logger.error(f"Error building vector store: {e}")
@@ -65,24 +110,30 @@ async def retrieve_context(query: str) -> str:
     """
     Retrieve relevant users using semantic search.
     """
-    global vector_store
+    global collection
     
     # Lazy initialization / Rebuild check (simple approach)
     # Ideally, we should update this on database changes or have a background job.
-    if vector_store is None:
+    if collection is None:
         await build_vector_store()
         
-    if vector_store is None:
+    if collection is None:
         return "No user data available."
         
     try:
         # Perform similarity search
-        # k=5 means we retrieve the top 5 most relevant users
-        docs = vector_store.similarity_search(query, k=5)
+        # n_results=5 means we retrieve the top 5 most relevant users
+        results = collection.query(
+            query_texts=[query],
+            n_results=5
+        )
+        
+        if not results or not results.get("documents") or not results["documents"][0]:
+            return "No relevant users found."
         
         context_str = "Found relevant Users:\n\n"
-        for i, doc in enumerate(docs, 1):
-            context_str += f"--- Result {i} ---\n{doc.page_content}\n\n"
+        for i, doc in enumerate(results["documents"][0], 1):
+            context_str += f"--- Result {i} ---\n{doc}\n\n"
             
         return context_str
     except Exception as e:
