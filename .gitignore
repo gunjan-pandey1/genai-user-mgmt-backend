@@ -1,0 +1,26 @@
+.env
+# Python
+__pycache__/
+*.pyc
+*.pyd
+*.pyo
+
+# Virtual environment
+venv/
+.venv/
+env/
+*.egg-info/
+build/
+dist/
+
+# Testing
+.pytest_cache/
+
+# Type checking
+.mypy_cache/
+
+# Linters/Formatters
+.ruff_cache/
+
+# IDEs
+.vscode/

@@ -1,0 +1,14 @@
+fastapi
+uvicorn
+motor
+pydantic[email]
+email-validator
+langchain
+
+langchain-community
+langchain-huggingface
+requests
+
+groq
+faiss-cpu
+sentence-transformers
