@@ -26,23 +26,40 @@ MODEL_NAME = "llama-3.1-8b-instant"
 CHROMA_HOST = os.getenv("CHROMA_HOST_ADDR")
 CHROMA_PORT = os.getenv("CHROMA_HOST_PORT", "8000")
 
-if CHROMA_HOST:
-    # Remote ChromaDB connection (Railway deployment)
-    logger.info(f"Connecting to remote ChromaDB at {CHROMA_HOST}:{CHROMA_PORT}")
-    chroma_client = chromadb.HttpClient(
-        host=CHROMA_HOST,
-        port=int(CHROMA_PORT),
-        settings=Settings(
-            anonymized_telemetry=False
-        )
-    )
-else:
-    # In-memory ChromaDB (local development)
-    logger.info("Using in-memory ChromaDB for local development")
-    chroma_client = chromadb.Client(Settings(
-        anonymized_telemetry=False,
-        allow_reset=True
-    ))
+# Initialize client as None, will be created on first use
+chroma_client = None
+
+def get_chroma_client():
+    """Get or create ChromaDB client with error handling."""
+    global chroma_client
+    
+    if chroma_client is not None:
+        return chroma_client
+    
+    try:
+        if CHROMA_HOST:
+            # Remote ChromaDB connection (Railway deployment)
+            logger.info(f"Connecting to remote ChromaDB at {CHROMA_HOST}:{CHROMA_PORT}")
+            chroma_client = chromadb.HttpClient(
+                host=CHROMA_HOST,
+                port=int(CHROMA_PORT),
+                settings=Settings(
+                    anonymized_telemetry=False
+                )
+            )
+        else:
+            # In-memory ChromaDB (local development)
+            logger.info("Using in-memory ChromaDB for local development")
+            chroma_client = chromadb.Client(Settings(
+                anonymized_telemetry=False,
+                allow_reset=True
+            ))
+        
+        return chroma_client
+    except Exception as e:
+        logger.error(f"Failed to connect to ChromaDB: {e}")
+        logger.warning("ChromaDB unavailable, RAG functionality will be limited")
+        return None
 
 # Collection name for users
 COLLECTION_NAME = "users"
@@ -54,6 +71,14 @@ async def build_vector_store():
     In production, this would be an incremental update to a persistent vector DB.
     """
     global collection
+    
+    # Get ChromaDB client with error handling
+    client = get_chroma_client()
+    if client is None:
+        logger.error("ChromaDB client unavailable, cannot build vector store")
+        collection = None
+        return
+    
     try:
         db = await get_database()
         cursor = db["users"].find()
@@ -66,12 +91,12 @@ async def build_vector_store():
         
         # Reset collection if it exists
         try:
-            chroma_client.delete_collection(name=COLLECTION_NAME)
+            client.delete_collection(name=COLLECTION_NAME)
         except:
             pass
         
         # Create new collection
-        collection = chroma_client.create_collection(name=COLLECTION_NAME)
+        collection = client.create_collection(name=COLLECTION_NAME)
         
         # Prepare data for ChromaDB
         documents = []
