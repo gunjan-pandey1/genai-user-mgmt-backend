@@ -23,8 +23,8 @@ MODEL_NAME = "llama-3.1-8b-instant"
 # Initialize ChromaDB client
 # ChromaDB uses default embeddings (all-MiniLM-L6-v2) built-in
 # Supports both remote (Railway) and local (in-memory) modes
-CHROMA_HOST = os.getenv("CHROMA_HOST")
-CHROMA_PORT = os.getenv("CHROMA_PORT", "8000")
+CHROMA_HOST = os.getenv("CHROMA_HOST_ADDR")
+CHROMA_PORT = os.getenv("CHROMA_HOST_PORT", "8000")
 
 if CHROMA_HOST:
     # Remote ChromaDB connection (Railway deployment)
