@@ -3,8 +3,7 @@ name: Backend - Docker Build and Push
 on:
   push:
     branches:
-      - main
-      - develop
+      - master
   workflow_dispatch:
 
 env:
