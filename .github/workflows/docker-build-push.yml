@@ -27,8 +27,8 @@ jobs:
       - name: Build and push Docker image
         uses: docker/build-push-action@v5
         with:
-          context: ./genai-user-mgmt-backend
-          file: ./genai-user-mgmt-backend/Dockerfile
+          context: .
+          file: ./Dockerfile
           push: true
           tags: |
             ${{ secrets.DOCKER_USERNAME }}/${{ env.DOCKER_IMAGE_NAME }}:latest
