@@ -1,0 +1,8 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: genai-backend
+  labels:
+    app: genai-user-mgmt
+    tier: backend
+

@@ -1,0 +1,14 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: backend-config
+  namespace: genai-backend
+  labels:
+    app: genai-user-mgmt
+    tier: backend
+data:
+  DB_NAME: genai_crud
+  CHROMA_HOST_ADDR: chromadb-service.genai-backend.svc.cluster.local
+  CHROMA_HOST_PORT: "8000"
+  PORT: "8000"
+

@@ -1,0 +1,81 @@
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: chromadb-pvc
+  namespace: genai-backend
+  labels:
+    app: genai-user-mgmt
+    tier: chromadb
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 5Gi
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: chromadb-deployment
+  namespace: genai-backend
+  labels:
+    app: genai-user-mgmt
+    tier: chromadb
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: genai-user-mgmt
+      tier: chromadb
+  template:
+    metadata:
+      labels:
+        app: genai-user-mgmt
+        tier: chromadb
+    spec:
+      containers:
+        - name: chromadb
+          image: ghcr.io/chroma-core/chroma:latest
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 8000
+              name: http
+          env:
+            - name: CHROMA_DB_IMPL
+              value: duckdb+parquet
+            - name: PERSIST_DIRECTORY
+              value: /chroma/data
+          volumeMounts:
+            - name: chroma-data
+              mountPath: /chroma/data
+          resources:
+            requests:
+              cpu: "100m"
+              memory: "256Mi"
+            limits:
+              cpu: "500m"
+              memory: "512Mi"
+      volumes:
+        - name: chroma-data
+          persistentVolumeClaim:
+            claimName: chromadb-pvc
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: chromadb-service
+  namespace: genai-backend
+  labels:
+    app: genai-user-mgmt
+    tier: chromadb
+spec:
+  type: ClusterIP
+  selector:
+    app: genai-user-mgmt
+    tier: chromadb
+  ports:
+    - name: http
+      port: 8000
+      targetPort: http
+      protocol: TCP
+

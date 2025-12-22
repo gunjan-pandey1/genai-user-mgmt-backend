@@ -1,0 +1,75 @@
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: mongo-pvc
+  namespace: genai-backend
+  labels:
+    app: genai-user-mgmt
+    tier: database
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 10Gi
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: mongo-deployment
+  namespace: genai-backend
+  labels:
+    app: genai-user-mgmt
+    tier: database
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: genai-user-mgmt
+      tier: database
+  template:
+    metadata:
+      labels:
+        app: genai-user-mgmt
+        tier: database
+    spec:
+      containers:
+        - name: mongo
+          image: mongo:6
+          ports:
+            - containerPort: 27017
+              name: mongo
+          volumeMounts:
+            - name: mongo-data
+              mountPath: /data/db
+          resources:
+            requests:
+              cpu: "100m"
+              memory: "256Mi"
+            limits:
+              cpu: "500m"
+              memory: "512Mi"
+      volumes:
+        - name: mongo-data
+          persistentVolumeClaim:
+            claimName: mongo-pvc
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: mongo-service
+  namespace: genai-backend
+  labels:
+    app: genai-user-mgmt
+    tier: database
+spec:
+  type: ClusterIP
+  selector:
+    app: genai-user-mgmt
+    tier: database
+  ports:
+    - name: mongo
+      port: 27017
+      targetPort: mongo
+      protocol: TCP
+

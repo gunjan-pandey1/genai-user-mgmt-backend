@@ -1,0 +1,19 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: genai-backend-service
+  namespace: genai-backend
+  labels:
+    app: genai-user-mgmt
+    tier: backend
+spec:
+  type: ClusterIP
+  selector:
+    app: genai-user-mgmt
+    tier: backend
+  ports:
+    - name: http
+      port: 8000
+      targetPort: http
+      protocol: TCP
+
